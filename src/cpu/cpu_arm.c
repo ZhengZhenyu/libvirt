@@ -22,18 +22,44 @@
 #include <config.h>
 
 #include "viralloc.h"
+#include "virlog.h"
 #include "cpu.h"
 #include "cpu_map.h"
 #include "virstring.h"
 #include "virxml.h"
+#include "virfile.h"
+#include "cpu_map.h"
+#include "cpu_arm.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
+
+VIR_LOG_INIT("cpu.cpu_arm");
+
+static const char *sysinfoCpuinfo = "/proc/cpuinfo";
+
+#define CPUINFO sysinfoCpuinfo
+#define CPUINFO_FILE_LEN (1024*1024)   /* 1MB limit for /proc/cpuinfo file */
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
     VIR_ARCH_ARMV7B,
     VIR_ARCH_ARMV7L,
     VIR_ARCH_AARCH64,
+};
+
+typedef struct _virCPUarmVendor virCPUarmVendor;
+typedef virCPUarmVendor *virCPUarmVendorPtr;
+struct _virCPUarmVendor {
+    char *name;
+    unsigned long value;
+};
+
+typedef struct _virCPUarmModel virCPUarmModel;
+typedef virCPUarmModel *virCPUarmModelPtr;
+struct _virCPUarmModel {
+    char *name;
+    virCPUarmVendorPtr vendor;
+    virCPUarmData data;
 };
 
 typedef struct _virCPUarmFeature virCPUarmFeature;
@@ -64,6 +90,10 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(virCPUarmFeature, virCPUarmFeatureFree);
 typedef struct _virCPUarmMap virCPUarmMap;
 typedef virCPUarmMap *virCPUarmMapPtr;
 struct _virCPUarmMap {
+    size_t nvendors;
+    virCPUarmVendorPtr *vendors;
+    size_t nmodels;
+    virCPUarmModelPtr *models;
     GPtrArray *features;
 };
 
@@ -82,10 +112,60 @@ virCPUarmMapNew(void)
 }
 
 static void
+virCPUarmDataClear(virCPUarmData *data)
+{
+    if (!data)
+        return;
+
+    VIR_FREE(data->features);
+}
+
+static void
+virCPUarmDataFree(virCPUDataPtr cpuData)
+{
+    if (!cpuData)
+        return;
+
+    virCPUarmDataClear(&cpuData->data.arm);
+    VIR_FREE(cpuData);
+}
+
+static void
+armModelFree(virCPUarmModelPtr model)
+{
+    if (!model)
+        return;
+
+    virCPUarmDataClear(&model->data);
+    g_free(model->name);
+    g_free(model);
+}
+
+static void
+armVendorFree(virCPUarmVendorPtr vendor)
+{
+    if (!vendor)
+        return;
+
+    g_free(vendor->name);
+    g_free(vendor);
+}
+
+static void
 virCPUarmMapFree(virCPUarmMapPtr map)
 {
     if (!map)
         return;
+
+    size_t i;
+
+    for (i = 0; i < map->nmodels; i++)
+        armModelFree(map->models[i]);
+    g_free(map->models);
+
+    for (i = 0; i < map->nvendors; i++)
+        armVendorFree(map->vendors[i]);
+    g_free(map->vendors);
 
     g_ptr_array_free(map->features, TRUE);
 
@@ -108,6 +188,176 @@ virCPUarmMapFeatureFind(virCPUarmMapPtr map,
     }
 
     return NULL;
+}
+
+static virCPUarmVendorPtr
+armVendorFindByID(virCPUarmMapPtr map,
+                  unsigned long vendor_id)
+{
+    size_t i;
+
+    for (i = 0; i < map->nvendors; i++) {
+        if (map->vendors[i]->value == vendor_id)
+            return map->vendors[i];
+    }
+
+    return NULL;
+}
+
+
+static virCPUarmVendorPtr
+armVendorFindByName(virCPUarmMapPtr map,
+                    const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < map->nvendors; i++) {
+        if (STREQ(map->vendors[i]->name, name))
+            return map->vendors[i];
+    }
+
+    return NULL;
+}
+
+
+static int
+armVendorParse(xmlXPathContextPtr ctxt,
+               const char *name,
+               void *data)
+{
+    virCPUarmMapPtr map = (virCPUarmMapPtr)data;
+    virCPUarmVendorPtr vendor = NULL;
+    int ret = -1;
+
+    if (VIR_ALLOC(vendor) < 0)
+        return ret;
+
+    vendor->name = g_strdup(name);
+
+    if (armVendorFindByName(map, vendor->name)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("CPU vendor %s already defined"), vendor->name);
+        goto cleanup;
+    }
+
+    if (virXPathULongHex("string(@value)", ctxt, &vendor->value) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       "%s", _("Missing CPU vendor value"));
+        goto cleanup;
+    }
+
+    if (armVendorFindByID(map, vendor->value)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("CPU vendor value 0x%2lx already defined"), vendor->value);
+        goto cleanup;
+    }
+
+    if (VIR_APPEND_ELEMENT(map->vendors, map->nvendors, vendor) < 0)
+        goto cleanup;
+
+    ret = 0;
+
+ cleanup:
+    armVendorFree(vendor);
+    return ret;
+
+}
+
+static virCPUarmModelPtr
+armModelFind(virCPUarmMapPtr map,
+             const char *name)
+{
+    size_t i;
+
+    for (i = 0; i < map->nmodels; i++) {
+        if (STREQ(map->models[i]->name, name))
+            return map->models[i];
+    }
+
+    return NULL;
+}
+
+
+static virCPUarmModelPtr
+armModelFindByPVR(virCPUarmMapPtr map,
+                  unsigned long pvr)
+{
+    size_t i;
+
+    for (i = 0; i < map->nmodels; i++) {
+        if (map->models[i]->data.pvr == pvr)
+            return map->models[i];
+    }
+
+    return NULL;
+}
+
+static int
+armModelParse(xmlXPathContextPtr ctxt,
+              const char *name,
+              void *data)
+{
+    virCPUarmMapPtr map = (virCPUarmMapPtr)data;
+    virCPUarmModel *model;
+    xmlNodePtr *nodes = NULL;
+    char *vendor = NULL;
+    int ret = -1;
+
+    if (VIR_ALLOC(model) < 0)
+        goto error;
+
+    model->name = g_strdup(name);
+
+    if (armModelFind(map, model->name)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("CPU model %s already defined"), model->name);
+        goto error;
+    }
+
+    if (virXPathBoolean("boolean(./vendor)", ctxt)) {
+        vendor = virXPathString("string(./vendor/@name)", ctxt);
+        if (!vendor) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Invalid vendor element in CPU model %s"),
+                           model->name);
+            goto error;
+        }
+
+        if (!(model->vendor = armVendorFindByName(map, vendor))) {
+            virReportError(VIR_ERR_INTERNAL_ERROR,
+                           _("Unknown vendor %s referenced by CPU model %s"),
+                           vendor, model->name);
+            goto error;
+        }
+    }
+
+    if (!virXPathBoolean("boolean(./pvr)", ctxt)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Missing PVR information for CPU model %s"),
+                       model->name);
+        goto error;
+    }
+
+    if (virXPathULongHex("string(./pvr/@value)", ctxt, &model->data.pvr) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Missing or invalid PVR value in CPU model %s"),
+                       model->name);
+        goto error;
+    }
+
+    if (VIR_APPEND_ELEMENT(map->models, map->nmodels, model) < 0)
+        goto error;
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(vendor);
+    VIR_FREE(nodes);
+    return ret;
+
+ error:
+    armModelFree(model);
+    goto cleanup;
 }
 
 static int
@@ -139,7 +389,7 @@ virCPUarmLoadMap(void)
 
     map = virCPUarmMapNew();
 
-    if (cpuMapLoad("arm", NULL, virCPUarmMapFeatureParse, NULL, map) < 0)
+    if (cpuMapLoad("arm", armVendorParse, virCPUarmMapFeatureParse, armModelParse, map) < 0)
         return NULL;
 
     return g_steal_pointer(&map);
@@ -252,13 +502,201 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
     return 0;
 }
 
+static int
+armCpuDataFromCpuInfo(virCPUarmData *data)
+{
+    int ret = -1;
+    char *eol = NULL;
+    char *str_vendor = NULL;
+    char *str_pvr = NULL;
+    char *outbuf = NULL;
+    const char *cur;
+
+    if (!data)
+        return ret;
+
+    if (virFileReadAll(CPUINFO, CPUINFO_FILE_LEN, &outbuf) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Failed to open %s"), CPUINFO);
+        goto cleanup;
+    }
+
+    if ((cur = strstr(outbuf, "CPU implementer")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"CPU implementer\" info in %s"), CPUINFO);
+        goto cleanup;
+    }
+
+    /* Account for format 'CPU implementer : XXXX'*/
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (!eol) {
+        str_vendor = g_strndup(cur, eol - cur);
+        if (virStrToLong_ul(str_vendor, NULL, 16, &data->vendor_id) < 0)
+            goto cleanup;
+    }
+
+    if ((cur = strstr(outbuf, "CPU part")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"CPU part\" info in %s"), CPUINFO);
+        goto cleanup;
+    }
+
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (!eol) {
+        str_pvr = g_strndup(cur, eol - cur);
+        if (virStrToLong_ul(str_pvr, NULL, 16, &data->pvr) < 0)
+            goto cleanup;
+    }
+
+    if ((cur = strstr(outbuf, "Features")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"Features\" info in %s"), CPUINFO);
+        goto cleanup;
+    }
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (eol)
+        data->features = g_strndup(cur, eol - cur);
+
+    ret = 0;
+
+ cleanup:
+    VIR_FREE(outbuf);
+    VIR_FREE(str_vendor);
+    VIR_FREE(str_pvr);
+    return ret;
+}
+
+static int
+armCpuDataParseFeatures(virCPUDefPtr cpu,
+                        const virCPUarmData *cpuData)
+{
+    int ret = -1;
+    size_t i;
+    char **features;
+
+    if (!cpu || !cpuData)
+        return ret;
+
+    if (!(features = virStringSplitCount(cpuData->features, " ",
+                                         0, &cpu->nfeatures)))
+        return ret;
+    if (cpu->nfeatures) {
+        if (VIR_ALLOC_N(cpu->features, cpu->nfeatures) < 0)
+            goto error;
+
+        for (i = 0; i < cpu->nfeatures; i++) {
+            cpu->features[i].policy = VIR_CPU_FEATURE_REQUIRE;
+            cpu->features[i].name = g_strdup(features[i]);
+        }
+    }
+
+    ret = 0;
+
+ cleanup:
+    virStringListFree(features);
+    return ret;
+
+ error:
+    for (i = 0; i < cpu->nfeatures; i++)
+        VIR_FREE(cpu->features[i].name);
+    VIR_FREE(cpu->features);
+    cpu->nfeatures = 0;
+    goto cleanup;
+}
+
+static int
+armDecode(virCPUDefPtr cpu,
+          const virCPUarmData *cpuData,
+          virDomainCapsCPUModelsPtr models)
+{
+    virCPUarmMapPtr map;
+    virCPUarmModelPtr model;
+    virCPUarmVendorPtr vendor = NULL;
+
+    if (!cpuData || !(map = virCPUarmGetMap()))
+        return -1;
+
+    if (!(model = armModelFindByPVR(map, cpuData->pvr))) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("Cannot find CPU model with PVR 0x%03lx"),
+                       cpuData->pvr);
+        return -1;
+    }
+
+    if (!virCPUModelIsAllowed(model->name, models)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("CPU model %s is not supported by hypervisor"),
+                       model->name);
+        return -1;
+    }
+
+    cpu->model = g_strdup(model->name);
+
+    if (cpuData->vendor_id &&
+        !(vendor = armVendorFindByID(map, cpuData->vendor_id))) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("Cannot find CPU vendor with vendor id 0x%02lx"),
+                       cpuData->vendor_id);
+        return -1;
+    }
+
+
+    if (vendor)
+        cpu->vendor = g_strdup(vendor->name);
+
+    if (cpuData->features &&
+        armCpuDataParseFeatures(cpu, cpuData) < 0)
+        return -1;
+
+    return 0;
+}
+
+static int
+armDecodeCPUData(virCPUDefPtr cpu,
+                 const virCPUData *data,
+                 virDomainCapsCPUModelsPtr models)
+{
+    return armDecode(cpu, &data->data.arm, models);
+}
+
+static int
+virCPUarmGetHost(virCPUDefPtr cpu,
+                 virDomainCapsCPUModelsPtr models)
+{
+    virCPUDataPtr cpuData = NULL;
+    int ret = -1;
+
+    if (virCPUarmDriverInitialize() < 0)
+        goto cleanup;
+
+    if (!(cpuData = virCPUDataNew(archs[0])))
+        goto cleanup;
+
+    if (armCpuDataFromCpuInfo(&cpuData->data.arm) < 0)
+        goto cleanup;
+
+    ret = armDecodeCPUData(cpu, cpuData, models);
+
+ cleanup:
+    virCPUarmDataFree(cpuData);
+    return ret;
+}
+
 struct cpuArchDriver cpuDriverArm = {
     .name = "arm",
     .arch = archs,
     .narch = G_N_ELEMENTS(archs),
     .compare = virCPUarmCompare,
-    .decode = NULL,
+    .decode = armDecodeCPUData,
     .encode = NULL,
+    .dataFree = virCPUarmDataFree,
+    .getHost = virCPUarmGetHost,
     .baseline = virCPUarmBaseline,
     .update = virCPUarmUpdate,
     .validateFeatures = virCPUarmValidateFeatures,
