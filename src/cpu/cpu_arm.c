@@ -531,11 +531,12 @@ armCpuDataFromCpuInfo(virCPUarmData *data)
     cur = strchr(cur, ':') + 1;
     eol = strchr(cur, '\n');
     virSkipSpaces(&cur);
-    if (!eol) {
-        str_vendor = g_strndup(cur, eol - cur);
-        if (virStrToLong_ul(str_vendor, NULL, 16, &data->vendor_id) < 0)
-            goto cleanup;
-    }
+    if (!eol)
+        goto cleanup;
+
+    str_vendor = g_strndup(cur, eol - cur);
+    if (virStrToLong_ul(str_vendor, NULL, 16, &data->vendor_id) < 0)
+        goto cleanup;
 
     if ((cur = strstr(outbuf, "CPU part")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -546,11 +547,12 @@ armCpuDataFromCpuInfo(virCPUarmData *data)
     cur = strchr(cur, ':') + 1;
     eol = strchr(cur, '\n');
     virSkipSpaces(&cur);
-    if (!eol) {
-        str_pvr = g_strndup(cur, eol - cur);
-        if (virStrToLong_ul(str_pvr, NULL, 16, &data->pvr) < 0)
-            goto cleanup;
-    }
+    if (!eol)
+        goto cleanup;
+
+    str_pvr = g_strndup(cur, eol - cur);
+    if (virStrToLong_ul(str_pvr, NULL, 16, &data->pvr) < 0)
+        goto cleanup;
 
     if ((cur = strstr(outbuf, "Features")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
