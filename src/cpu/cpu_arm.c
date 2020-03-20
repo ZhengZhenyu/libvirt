@@ -46,6 +46,13 @@ static const char *lsCpuPath = "/usr/bin/lscpu";
 #define LSCPU lsCpuPath
 #define MAX_LSCPU_SIZE = (1024*1024)   /* 1MB limit for lscpu output */
 
+VIR_LOG_INIT("cpu.cpu_arm");
+
+static const char *sysinfoCpuinfo = "/proc/cpuinfo";
+
+#define CPUINFO sysinfoCpuinfo
+#define CPUINFO_FILE_LEN (1024*1024)   /* 1MB limit for /proc/cpuinfo file */
+
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
     VIR_ARCH_ARMV7B,
