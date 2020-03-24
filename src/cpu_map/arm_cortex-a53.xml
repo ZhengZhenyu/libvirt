@@ -1,6 +1,5 @@
 <cpus>
   <model name='cortex-a53'>
     <vendor name='ARM'/>
-    <pvr value='0xd03'/>
   </model>
 </cpus>

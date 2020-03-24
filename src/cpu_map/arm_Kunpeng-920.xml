@@ -1,7 +1,6 @@
 <cpus>
   <model name='Kunpeng-920'>
     <vendor name='Hisilicon'/>
-    <pvr value='0xd01'/>
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>

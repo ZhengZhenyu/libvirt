@@ -20,6 +20,7 @@
  */
 
 #include <config.h>
+#include <stdio.h>
 
 #include "viralloc.h"
 #include "virlog.h"
@@ -36,9 +37,14 @@
 VIR_LOG_INIT("cpu.cpu_arm");
 
 static const char *sysinfoCpuinfo = "/proc/cpuinfo";
+static const char *lscpupath = "/usr/bin/lscpu";
+
 
 #define CPUINFO sysinfoCpuinfo
 #define CPUINFO_FILE_LEN (1024*1024)   /* 1MB limit for /proc/cpuinfo file */
+
+#define LSCPU lscpupath
+#define MAX_LSCPU_SIZE = (1024*1024)
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
@@ -279,13 +285,13 @@ armModelFind(virCPUarmMapPtr map,
 
 
 static virCPUarmModelPtr
-armModelFindByPVR(virCPUarmMapPtr map,
-                  unsigned long pvr)
+armModelFindByModelName(virCPUarmMapPtr map,
+                  char *model_name)
 {
     size_t i;
 
     for (i = 0; i < map->nmodels; i++) {
-        if (map->models[i]->data.pvr == pvr)
+        if (map->models[i]->name == model_name)
             return map->models[i];
     }
 
@@ -329,20 +335,6 @@ armModelParse(xmlXPathContextPtr ctxt,
                            vendor, model->name);
             goto error;
         }
-    }
-
-    if (!virXPathBoolean("boolean(./pvr)", ctxt)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Missing PVR information for CPU model %s"),
-                       model->name);
-        goto error;
-    }
-
-    if (virXPathULongHex("string(./pvr/@value)", ctxt, &model->data.pvr) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Missing or invalid PVR value in CPU model %s"),
-                       model->name);
-        goto error;
     }
 
     if (VIR_APPEND_ELEMENT(map->models, map->nmodels, model) < 0)
@@ -503,6 +495,73 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
 }
 
 static int
+armCpuDataFromLsCpu(virCPUarmData *data)
+{
+    int ret = -1;
+    char outbuf[MAX_LSCPU_SIZE];
+    char *eol = NULL;
+    const char *cur;
+    
+
+    if (!data)
+        return ret;
+    
+    FILE *lscpu = popen(LSCPU, "r");
+
+    if (lscpu == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Unable to run 'lscpu' command, check %s"), LSCPU);
+		goto cleanup;
+	}
+
+    fread(outbuf, 1, MAX_LSCPU_SIZE, lscpu);
+    pclose(lscpu);
+
+    if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"Vendor ID\" info in %s command result"), LSCPU);
+        goto cleanup;
+    }
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (!eol)
+        goto cleanup;
+
+    data->vendor_id = g_strndup(cur, eol - cur);
+
+    if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"Model Name\" info in %s command result"), LSCPU);
+        goto cleanup;
+    }
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (!eol)
+        goto cleanup;
+
+    data->model_name = g_strndup(cur, eol - cur);
+
+    if ((cur = strstr(outbuf, "Flags")) == NULL) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("there is no \"Flags\" info in %s command result"), LSCPU);
+        goto cleanup;
+    }
+    cur = strchr(cur, ':') + 1;
+    eol = strchr(cur, '\n');
+    virSkipSpaces(&cur);
+    if (!eol)
+        goto cleanup;
+
+    data->features = g_strndup(cur, eol - cur);
+
+ cleanup:
+    VIR_FREE(outbuf);
+    return ret;
+}
+
+static int
 armCpuDataFromCpuInfo(virCPUarmData *data)
 {
     int ret = -1;
@@ -624,10 +683,10 @@ armDecode(virCPUDefPtr cpu,
     if (!cpuData || !(map = virCPUarmGetMap()))
         return -1;
 
-    if (!(model = armModelFindByPVR(map, cpuData->pvr))) {
+    if (!(model = armModelFindByModelName(map, cpuData->model_name))) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("Cannot find CPU model with PVR 0x%03lx"),
-                       cpuData->pvr);
+                       _("Cannot find CPU model with name %s"),
+                       cpuData->model_name);
         return -1;
     }
 
@@ -641,9 +700,9 @@ armDecode(virCPUDefPtr cpu,
     cpu->model = g_strdup(model->name);
 
     if (cpuData->vendor_id &&
-        !(vendor = armVendorFindByID(map, cpuData->vendor_id))) {
+        !(vendor = armVendorFindByName(map, cpuData->vendor_id))) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("Cannot find CPU vendor with vendor id 0x%02lx"),
+                       _("Cannot find CPU vendor with vendor id %s"),
                        cpuData->vendor_id);
         return -1;
     }
@@ -680,7 +739,7 @@ virCPUarmGetHost(virCPUDefPtr cpu,
     if (!(cpuData = virCPUDataNew(archs[0])))
         goto cleanup;
 
-    if (armCpuDataFromCpuInfo(&cpuData->data.arm) < 0)
+    if (armCpuDataFromLsCpu(&cpuData->data.arm) < 0)
         goto cleanup;
 
     ret = armDecodeCPUData(cpu, cpuData, models);
