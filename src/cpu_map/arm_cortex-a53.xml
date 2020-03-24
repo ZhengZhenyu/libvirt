@@ -1,6 +1,7 @@
 <cpus>
   <model name='cortex-a53'>
     <vendor name='ARM'/>
+<<<<<<< HEAD
     <pvr value='0xd03'/>
     <feature name="fp"/>
     <feature name="asimd"/>
@@ -12,5 +13,7 @@
     <feature name="crc32"/>
     <feature name="cpuid"/>
     <feature name="asimdrdm"/>
+=======
+>>>>>>> d36424093b... using lscpu for arm
   </model>
 </cpus>

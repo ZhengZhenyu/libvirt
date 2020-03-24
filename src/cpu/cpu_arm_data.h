@@ -26,7 +26,13 @@
 
 typedef struct _virCPUarmData virCPUarmData;
 struct _virCPUarmData {
+<<<<<<< HEAD
     unsigned long vendor_id;
     unsigned long pvr;
     GPtrArray *features;
+=======
+    char *vendor_id;
+    char *model_name;
+    char *features;
+>>>>>>> d36424093b... using lscpu for arm
 };
