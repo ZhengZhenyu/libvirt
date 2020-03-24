@@ -33,7 +33,10 @@
 #include "cpu.h"
 #include "cpu_map.h"
 #include "vircommand.h"
+<<<<<<< HEAD
 #include "virfile.h"
+=======
+>>>>>>> e7b978c90d... update use vircmmand
 #include "virstring.h"
 #include "virxml.h"
 #include "cpu_map.h"
@@ -517,24 +520,21 @@ armCpuDataFromRegs(virCPUarmData *data){
 armCpuDataFromLsCpu(virCPUarmData *data)
 {
     int ret = -1;
-    char outbuf[MAX_LSCPU_SIZE];
+    char *outbuf = NULL;
     char *eol = NULL;
     const char *cur;
-    
+    g_autofree char *lscpu = NULL;
 
     if (!data)
         return ret;
-    
-    FILE *lscpu = popen(LSCPU, "r");
 
-    if (lscpu == NULL) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Unable to run 'lscpu' command, check %s"), LSCPU);
-		goto cleanup;
-	}
+    lscpu = virFindFileInPath("lscpu");
 
-    fread(outbuf, 1, MAX_LSCPU_SIZE, lscpu);
-    pclose(lscpu);
+    cmd = virCommandNew(lscpu);
+    virCommandSetOutputBuffer(cmd, &outbuf);
+
+    if (virCommandRun(cmd, NULL) < 0) 
+        goto cleanup;
 
     if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
