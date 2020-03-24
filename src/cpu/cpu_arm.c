@@ -581,6 +581,7 @@ armCpuDataFromLsCpu(virCPUarmData *data)
 }
 
 static int
+<<<<<<< HEAD
 armCpuDataFromCpuInfo(virCPUarmData *data)
 {
     int ret = -1;
@@ -632,6 +633,8 @@ armCpuDataFromCpuInfo(virCPUarmData *data)
 }
 
 static int
+=======
+>>>>>>> 7765205601... delete unused code
 armCpuDataParseFeatures(virCPUDefPtr cpu,
                         const virCPUarmData *cpuData)
 {
