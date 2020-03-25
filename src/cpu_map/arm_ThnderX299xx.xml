@@ -1,6 +1,6 @@
 <cpus>
-  <model name='cortex-a53'>
-    <vendor name='ARM'/>
+  <model name='ThunderX299xx'>
+    <vendor name='Cavium'/>
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>

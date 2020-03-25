@@ -1,6 +1,6 @@
 <cpus>
-  <model name='cortex-a53'>
-    <vendor name='ARM'/>
+  <model name='Falkor'>
+    <vendor name='Qualcomm'/>
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>
