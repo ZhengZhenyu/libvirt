@@ -22,21 +22,14 @@
 
 #include <asm/hwcap.h>
 #include <config.h>
-<<<<<<< HEAD
 #include <sys/auxv.h>
-=======
-#include <stdio.h>
->>>>>>> d36424093b... using lscpu for arm
 
 #include "viralloc.h"
 #include "virlog.h"
 #include "cpu.h"
 #include "cpu_map.h"
 #include "vircommand.h"
-<<<<<<< HEAD
 #include "virfile.h"
-=======
->>>>>>> e7b978c90d... update use vircmmand
 #include "virstring.h"
 #include "virxml.h"
 #include "cpu_map.h"
@@ -513,93 +506,8 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
 }
 
 static int
-<<<<<<< HEAD
 armCpuDataFromRegs(virCPUarmData *data){
     unsigned long cpuid, hwcaps;
-=======
-armCpuDataFromLsCpu(virCPUarmData *data)
-{
-    int ret = -1;
-    char *outbuf = NULL;
-    char *eol = NULL;
-    const char *cur;
-    g_autofree char *lscpu = NULL;
-
-    if (!data)
-        return ret;
-
-    lscpu = virFindFileInPath("lscpu");
-
-    cmd = virCommandNew(lscpu);
-    virCommandSetOutputBuffer(cmd, &outbuf);
-
-    if (virCommandRun(cmd, NULL) < 0) 
-        goto cleanup;
-
-    if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("there is no \"Vendor ID\" info in %s command result"), LSCPU);
-        goto cleanup;
-    }
-    cur = strchr(cur, ':') + 1;
-    eol = strchr(cur, '\n');
-    virSkipSpaces(&cur);
-    if (!eol)
-        goto cleanup;
-
-    data->vendor_id = g_strndup(cur, eol - cur);
-
-    if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("there is no \"Model Name\" info in %s command result"), LSCPU);
-        goto cleanup;
-    }
-    cur = strchr(cur, ':') + 1;
-    eol = strchr(cur, '\n');
-    virSkipSpaces(&cur);
-    if (!eol)
-        goto cleanup;
-
-    data->model_name = g_strndup(cur, eol - cur);
-
-    if ((cur = strstr(outbuf, "Flags")) == NULL) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("there is no \"Flags\" info in %s command result"), LSCPU);
-        goto cleanup;
-    }
-    cur = strchr(cur, ':') + 1;
-    eol = strchr(cur, '\n');
-    virSkipSpaces(&cur);
-    if (!eol)
-        goto cleanup;
-
-    data->features = g_strndup(cur, eol - cur);
-
- cleanup:
-    VIR_FREE(outbuf);
-    return ret;
-}
-
-static int
-<<<<<<< HEAD
-armCpuDataFromCpuInfo(virCPUarmData *data)
-{
-    int ret = -1;
-    char *eol = NULL;
-    char *str_vendor = NULL;
-    char *str_pvr = NULL;
-    char *outbuf = NULL;
-    const char *cur;
-
-    if (!data)
-        return ret;
-
-    if (virFileReadAll(CPUINFO, CPUINFO_FILE_LEN, &outbuf) < 0) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("Failed to open %s"), CPUINFO);
-        goto cleanup;
-    }
->>>>>>> d36424093b... using lscpu for arm
 
     if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -633,8 +541,6 @@ armCpuDataFromCpuInfo(virCPUarmData *data)
 }
 
 static int
-=======
->>>>>>> 7765205601... delete unused code
 armCpuDataParseFeatures(virCPUDefPtr cpu,
                         const virCPUarmData *cpuData)
 {
@@ -735,11 +641,7 @@ virCPUarmGetHost(virCPUDefPtr cpu,
     if (!(cpuData = virCPUDataNew(archs[0])))
         goto cleanup;
 
-<<<<<<< HEAD
     if (armCpuDataFromRegs(&cpuData->data.arm) < 0)
-=======
-    if (armCpuDataFromLsCpu(&cpuData->data.arm) < 0)
->>>>>>> d36424093b... using lscpu for arm
         goto cleanup;
 
     ret = armDecodeCPUData(cpu, cpuData, models);

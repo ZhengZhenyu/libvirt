@@ -1,11 +1,7 @@
 <cpus>
   <model name='Kunpeng-920'>
-<<<<<<< HEAD
     <vendor name='HiSilicon'/>
     <pvr value='0xd01'/>
-=======
-    <vendor name='Hisilicon'/>
->>>>>>> d36424093b... using lscpu for arm
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>
