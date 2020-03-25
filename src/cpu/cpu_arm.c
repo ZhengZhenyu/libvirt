@@ -26,6 +26,7 @@
 #include "cpu.h"
 #include "cpu_map.h"
 #include "vircommand.h"
+#include "virfile.h"
 #include "virstring.h"
 #include "virxml.h"
 #include "cpu_map.h"
