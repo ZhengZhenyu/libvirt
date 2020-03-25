@@ -22,7 +22,10 @@
 
 #include <asm/hwcap.h>
 #include <config.h>
+<<<<<<< HEAD
 #include <sys/auxv.h>
+=======
+>>>>>>> 900d5caff2... fix typo
 
 #include "viralloc.h"
 #include "virlog.h"
@@ -48,15 +51,10 @@ static const char *lsCpuPath = "/usr/bin/lscpu";
 
 VIR_LOG_INIT("cpu.cpu_arm");
 
-static const char *sysinfoCpuinfo = "/proc/cpuinfo";
-static const char *lscpupath = "/usr/bin/lscpu";
+static const char *lsCpuPath = "/usr/bin/lscpu";
 
-
-#define CPUINFO sysinfoCpuinfo
-#define CPUINFO_FILE_LEN (1024*1024)   /* 1MB limit for /proc/cpuinfo file */
-
-#define LSCPU lscpupath
-#define MAX_LSCPU_SIZE = (1024*1024)
+#define LSCPU lsCpuPath
+#define MAX_LSCPU_SIZE = (1024*1024)   /* 1MB limit for lscpu output */
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
