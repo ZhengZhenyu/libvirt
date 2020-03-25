@@ -20,7 +20,6 @@
  */
 
 #include <config.h>
-#include <stdio.h>
 
 #include "viralloc.h"
 #include "virlog.h"
@@ -29,7 +28,6 @@
 #include "vircommand.h"
 #include "virstring.h"
 #include "virxml.h"
-#include "virfile.h"
 #include "cpu_map.h"
 #include "cpu_arm.h"
 
@@ -37,15 +35,10 @@
 
 VIR_LOG_INIT("cpu.cpu_arm");
 
-static const char *sysinfoCpuinfo = "/proc/cpuinfo";
-static const char *lscpupath = "/usr/bin/lscpu";
+static const char *lsCpuPath = "/usr/bin/lscpu";
 
-
-#define CPUINFO sysinfoCpuinfo
-#define CPUINFO_FILE_LEN (1024*1024)   /* 1MB limit for /proc/cpuinfo file */
-
-#define LSCPU lscpupath
-#define MAX_LSCPU_SIZE = (1024*1024)
+#define LSCPU lsCpuPath
+#define MAX_LSCPU_SIZE = (1024*1024)   /* 1MB limit for lscpu output */
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
@@ -494,7 +487,6 @@ armCpuDataFromLsCpu(virCPUarmData *data)
         return ret;
 
     lscpu = virFindFileInPath("lscpu");
-
     cmd = virCommandNew(lscpu);
     virCommandSetOutputBuffer(cmd, &outbuf);
 
@@ -514,9 +506,9 @@ armCpuDataFromLsCpu(virCPUarmData *data)
 
     data->vendor_id = g_strndup(cur, eol - cur);
 
-    if ((cur = strstr(outbuf, "Model Name")) == NULL) {
+    if ((cur = strstr(outbuf, "Model name")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("there is no \"Model Name\" info in %s command result"), LSCPU);
+                       _("there is no \"Model name\" info in %s command result"), LSCPU);
         goto cleanup;
     }
     cur = strchr(cur, ':') + 1;
