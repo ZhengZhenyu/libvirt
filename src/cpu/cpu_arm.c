@@ -284,21 +284,6 @@ armModelFind(virCPUarmMapPtr map,
     return NULL;
 }
 
-
-static virCPUarmModelPtr
-armModelFindByModelName(virCPUarmMapPtr map,
-                  char *model_name)
-{
-    size_t i;
-
-    for (i = 0; i < map->nmodels; i++) {
-        if (map->models[i]->name == model_name)
-            return map->models[i];
-    }
-
-    return NULL;
-}
-
 static int
 armModelParse(xmlXPathContextPtr ctxt,
               const char *name,
@@ -502,6 +487,7 @@ armCpuDataFromLsCpu(virCPUarmData *data)
     char *outbuf = NULL;
     char *eol = NULL;
     const char *cur;
+    virCommandPtr cmd = NULL;
     g_autofree char *lscpu = NULL;
 
     if (!data)
@@ -528,7 +514,7 @@ armCpuDataFromLsCpu(virCPUarmData *data)
 
     data->vendor_id = g_strndup(cur, eol - cur);
 
-    if ((cur = strstr(outbuf, "Vendor ID")) == NULL) {
+    if ((cur = strstr(outbuf, "Model Name")) == NULL) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
                        _("there is no \"Model Name\" info in %s command result"), LSCPU);
         goto cleanup;
@@ -554,7 +540,10 @@ armCpuDataFromLsCpu(virCPUarmData *data)
 
     data->features = g_strndup(cur, eol - cur);
 
+    ret = 0;
+
  cleanup:
+    virCommandFree(cmd);
     VIR_FREE(outbuf);
     return ret;
 }
@@ -609,7 +598,7 @@ armDecode(virCPUDefPtr cpu,
     if (!cpuData || !(map = virCPUarmGetMap()))
         return -1;
 
-    if (!(model = armModelFindByModelName(map, cpuData->model_name))) {
+    if (!(model = armModelFind(map, cpuData->model_name))) {
         virReportError(VIR_ERR_OPERATION_FAILED,
                        _("Cannot find CPU model with name %s"),
                        cpuData->model_name);
