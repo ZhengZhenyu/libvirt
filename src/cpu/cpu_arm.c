@@ -545,6 +545,7 @@ armCpuDataFromRegs(virCPUarmData *data){
         if (!cpu_feature_string)
             goto cleanup;
     }
+    data->features = g_strdup(cpu_feature_string);
 
     return 0;
 
