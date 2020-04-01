@@ -510,6 +510,7 @@ armCpuDataFromRegs(virCPUarmData *data){
         "sm3", "sm4", "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat", "ilrcpc",
         "flagm", "ssbs", "sb", "paca", "pacg"};
     unsigned long cpuid, hwcaps;
+  
 
     if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -528,7 +529,7 @@ armCpuDataFromRegs(virCPUarmData *data){
 
 	for (int i = 0; i< MAX_CPU_FLAGS; i++){
 		if (hwcaps & BIT_SHIFTS(i)) {
-			feature = virCPUarmFeatureNew();
+			g_autoptr(virCPUarmFeature) feature = virCPUarmFeatureNew();
             feature->name = g_strdup(flag_list[i]);
             g_ptr_array_add(data->features, g_steal_pointer(&feature));
 			}
