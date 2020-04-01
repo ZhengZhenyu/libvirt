@@ -118,7 +118,7 @@ virCPUarmDataClear(virCPUarmData *data)
     if (!data)
         return;
 
-    g_ptr_array_free(data->features, TRUE);
+    VIR_FREE(data->features);
 }
 
 static void
@@ -533,7 +533,7 @@ armCpuDataFromRegs(virCPUarmData *data){
  cleanup:
     virStringListFree(cpu_features);
     VIR_FREE(cpu_feature_string);
-    return ret;
+    return -1;
 }
 
 static int
