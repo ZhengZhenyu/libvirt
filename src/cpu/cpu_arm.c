@@ -515,13 +515,17 @@ armCpuDataFromRegs(virCPUarmData *data){
     hwcaps = getauxval(AT_HWCAP);
     VIR_DEBUG("CPU flags read from register:  0x%016lx", hwcaps);
 
+    /* "host" + all features + NULL */
+    if (VIR_ALLOC_N(cpu_features, MAX_CPU_FLAGS) < 0)
+        return -1;
+
     for (int i = 0; i< MAX_CPU_FLAGS; i++){
         if (hwcaps & BIT_SHIFTS(i)) {
             cpu_features[cpu_feature_index] = g_strdup(flag_list[i]);
             cpu_feature_index++;
             }
         }
-    cpu_features[cpu_feature_index] = NULL;
+
     if (cpu_feature_index > 1) {
         cpu_feature_string = virStringListJoin((const char **)cpu_features, " ");
         if (!cpu_feature_string)
