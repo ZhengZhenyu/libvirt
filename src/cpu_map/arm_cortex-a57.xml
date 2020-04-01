@@ -1,6 +1,7 @@
 <cpus>
   <model name='cortex-a57'>
     <vendor name='ARM'/>
+    <pvr value='0xd07'/>
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>
