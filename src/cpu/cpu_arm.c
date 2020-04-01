@@ -1,7 +1,7 @@
 /*
  * cpu_arm.c: CPU driver for arm CPUs
  *
- * Copyright (C) 2020 Huawei Technology
+ * Copyright (C) 2020 Huawei Technologies Co., Ltd.
  * Copyright (C) 2013 Red Hat, Inc.
  * Copyright (C) Canonical Ltd. 2012
  *
