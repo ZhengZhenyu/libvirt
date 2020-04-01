@@ -1,6 +1,7 @@
 <cpus>
-  <model name='ThunderX299xx'>
+  <model name='ThunderX2 99xx'>
     <vendor name='Cavium'/>
+    <pvr value='0x0af'/>
     <feature name="fp"/>
     <feature name="asimd"/>
     <feature name="evtstrm"/>
