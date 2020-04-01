@@ -493,11 +493,11 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
 
 static int
 armCpuDataFromRegs(virCPUarmData *data){
-    char *flag_list[MAX_CPU_FLAGS] = {
+    const char *flag_list[MAX_CPU_FLAGS] = {
         "fp", "asimd", "evtstrm", "aes", "pmull", "sha1", "sha2", "crc32","atomics",  
-        "fphp", "asimdhp", "cpuid", "asimdrdm", "jscvt","fcma","lrcpc","dcpop","sha3",
-        "sm3","sm4","asimddp","sha512","sve","asimdfhm","dit","uscat","ilrcpc","flagm",
-        "ssbs","sb","paca","pacg"};
+        "fphp", "asimdhp", "cpuid", "asimdrdm", "jscvt", "fcma", "lrcpc", "dcpop", "sha3",
+        "sm3", "sm4", "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat", "ilrcpc",
+        "flagm", "ssbs", "sb", "paca", "pacg"};
     unsigned long cpuid, hwcaps;
 
     if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
@@ -515,7 +515,7 @@ armCpuDataFromRegs(virCPUarmData *data){
     hwcaps = getauxval(AT_HWCAP);
     VIR_DEBUG("CPU flags read from register:  0x%016lx", hwcaps);
 
-	for (int i = 0; i< 32; i++){
+	for (int i = 0; i< MAX_CPU_FLAGS; i++){
 		if (hwcaps & BIT_SHIFTS(i)) {
 			feature = virCPUarmFeatureNew();
             feature->name = g_strdup(flag_list[i]);
