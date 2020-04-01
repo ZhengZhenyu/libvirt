@@ -22,10 +22,7 @@
 
 #include <asm/hwcap.h>
 #include <config.h>
-<<<<<<< HEAD
 #include <sys/auxv.h>
-=======
->>>>>>> 900d5caff2... fix typo
 
 #include "viralloc.h"
 #include "virlog.h"
@@ -499,7 +496,9 @@ armCpuDataFromRegs(virCPUarmData *data){
         "sm3", "sm4", "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat", "ilrcpc",
         "flagm", "ssbs", "sb", "paca", "pacg"};
     unsigned long cpuid, hwcaps;
-  
+    char **cpu_features = NULL;
+    char *cpu_feature_string = NULL;
+    int cpu_feature_index = 0;
 
     if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
@@ -516,15 +515,25 @@ armCpuDataFromRegs(virCPUarmData *data){
     hwcaps = getauxval(AT_HWCAP);
     VIR_DEBUG("CPU flags read from register:  0x%016lx", hwcaps);
 
-	for (int i = 0; i< MAX_CPU_FLAGS; i++){
-		if (hwcaps & BIT_SHIFTS(i)) {
-			g_autoptr(virCPUarmFeature) feature = virCPUarmFeatureNew();
-            feature->name = g_strdup(flag_list[i]);
-            g_ptr_array_add(data->features, g_steal_pointer(&feature));
-			}
-		}   
+    for (int i = 0; i< MAX_CPU_FLAGS; i++){
+        if (hwcaps & BIT_SHIFTS(i)) {
+            cpu_features[cpu_feature_index] = g_strdup(flag_list[i]);
+            cpu_feature_index++;
+            }
+        }
+    cpu_features[cpu_feature_index] = NULL;
+    if (cpu_feature_index > 1) {
+        cpu_feature_string = virStringListJoin((const char **)cpu_features, " ");
+        if (!cpu_feature_string)
+            goto cleanup;
+    }
 
     return 0;
+
+ cleanup:
+    virStringListFree(cpu_features);
+    VIR_FREE(cpu_feature_string);
+    return ret;
 }
 
 static int
@@ -533,24 +542,28 @@ armCpuDataParseFeatures(virCPUDefPtr cpu,
 {
     int ret = -1;
     size_t i;
+    char **features;
 
     if (!cpu || !cpuData)
         return ret;
 
+    if (!(features = virStringSplitCount(cpuData->features, " ",
+                                         0, &cpu->nfeatures)))
+        return ret;
     if (cpu->nfeatures) {
         if (VIR_ALLOC_N(cpu->features, cpu->nfeatures) < 0)
             goto error;
 
         for (i = 0; i < cpu->nfeatures; i++) {
-        virCPUarmFeaturePtr feature = g_ptr_array_index(cpuData->features, i);
-        cpu->features[i].policy = VIR_CPU_FEATURE_REQUIRE;
-        cpu->features[i].name = g_strdup(feature->name);
+            cpu->features[i].policy = VIR_CPU_FEATURE_REQUIRE;
+            cpu->features[i].name = g_strdup(features[i]);
         }
     }
 
     ret = 0;
 
  cleanup:
+    virStringListFree(features);
     return ret;
 
  error:
