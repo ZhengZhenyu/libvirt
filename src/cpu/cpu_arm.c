@@ -20,8 +20,8 @@
  * <http://www.gnu.org/licenses/>.
  */
 
-#include <asm/hwcap.h>
 #include <config.h>
+#include <asm/hwcap.h>
 #include <sys/auxv.h>
 
 #include "viralloc.h"
@@ -33,8 +33,10 @@
 #include "virxml.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
-#define BIT_SHIFTS(n) (1UL << (n))  /* Shift bit mask for parsing cpu flags */
-#define MAX_CPU_FLAGS 32            /* The current max number of cpu flags on ARM is 32 */
+/* Shift bit mask for parsing cpu flags */
+#define BIT_SHIFTS(n) (1UL << (n))
+/* The current max number of cpu flags on ARM is 32 */
+#define MAX_CPU_FLAGS 32
 
 VIR_LOG_INIT("cpu.cpu_arm");
 
@@ -210,7 +212,7 @@ virCPUarmMapFeatureParse(xmlXPathContextPtr ctxt G_GNUC_UNUSED,
     return 0;
 }
 
-	static virCPUarmVendorPtr
+static virCPUarmVendorPtr
 armVendorFindByID(virCPUarmMapPtr map,
                   unsigned long vendor_id)
 {
@@ -256,7 +258,8 @@ armVendorParse(xmlXPathContextPtr ctxt,
 
     if (armVendorFindByName(map, vendor->name)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("CPU vendor %s already defined"), vendor->name);
+                       _("CPU vendor %s already defined"),
+                       vendor->name);
         goto cleanup;
     }
 
@@ -268,7 +271,8 @@ armVendorParse(xmlXPathContextPtr ctxt,
 
     if (armVendorFindByID(map, vendor->value)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("CPU vendor value 0x%2lx already defined"), vendor->value);
+                       _("CPU vendor value 0x%2lx already defined"),
+                       vendor->value);
         goto cleanup;
     }
 
@@ -329,7 +333,8 @@ armModelParse(xmlXPathContextPtr ctxt,
 
     if (armModelFind(map, model->name)) {
         virReportError(VIR_ERR_INTERNAL_ERROR,
-                       _("CPU model %s already defined"), model->name);
+                       _("CPU model %s already defined"),
+                       model->name);
         goto error;
     }
 
@@ -386,7 +391,8 @@ virCPUarmLoadMap(void)
 
     map = virCPUarmMapNew();
 
-    if (cpuMapLoad("arm", armVendorParse, virCPUarmMapFeatureParse, armModelParse, map) < 0)
+    if (cpuMapLoad("arm", armVendorParse, virCPUarmMapFeatureParse,
+                   armModelParse, map) < 0)
         return NULL;
 
     return g_steal_pointer(&map);
@@ -509,56 +515,62 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
  * represented by each bit.
  */
 static int
-armCpuDataFromRegs(virCPUarmData *data){
-    /* Generate human readable flag list according to the order of AT_HWCAP bit map */
+armCpuDataFromRegs(virCPUarmData *data) {
+    /* Generate human readable flag list according to the order of */
+    /* AT_HWCAP bit map */
     const char *flag_list[MAX_CPU_FLAGS] = {
-        "fp", "asimd", "evtstrm", "aes", "pmull", "sha1", "sha2", "crc32","atomics",
-        "fphp", "asimdhp", "cpuid", "asimdrdm", "jscvt", "fcma", "lrcpc", "dcpop", "sha3",
-        "sm3", "sm4", "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat", "ilrcpc",
-        "flagm", "ssbs", "sb", "paca", "pacg"};
+        "fp", "asimd", "evtstrm", "aes", "pmull", "sha1", "sha2",
+        "crc32", "atomics", "fphp", "asimdhp", "cpuid", "asimdrdm",
+        "jscvt", "fcma", "lrcpc", "dcpop", "sha3", "sm3", "sm4",
+        "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat",
+        "ilrcpc", "flagm", "ssbs", "sb", "paca", "pacg"};
     unsigned long cpuid, hwcaps;
-    char **cpu_features = NULL;
-    char *cpu_feature_string = NULL;
+    char **features = NULL;
+    char *cpu_feature_str = NULL;
     int cpu_feature_index = 0;
+    size_t i;
 
     if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
-        virReportError(VIR_ERR_INTERNAL_ERROR,
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
                        _("CPUID registers unavailable"));
             return -1;
         }
 
-    asm("mrs %0, MIDR_EL1" : "=r" (cpuid)); /* read the cpuid data from MIDR_EL1 register */
+    /* read the cpuid data from MIDR_EL1 register */
+    asm("mrs %0, MIDR_EL1" : "=r" (cpuid));
     VIR_DEBUG("CPUID read from register:  0x%016lx", cpuid);
 
-    data->pvr = cpuid>>4&0xFFF;             /* parse the coresponding part_id bits */
-    data->vendor_id = cpuid>>24&0xFF;       /* parse the coresponding vendor_id bits */
+    /* parse the coresponding part_id bits */
+    data->pvr = cpuid>>4&0xFFF;
+    /* parse the coresponding vendor_id bits */
+    data->vendor_id = cpuid>>24&0xFF;
 
     hwcaps = getauxval(AT_HWCAP);
     VIR_DEBUG("CPU flags read from register:  0x%016lx", hwcaps);
 
-    if (VIR_ALLOC_N(cpu_features, MAX_CPU_FLAGS) < 0)
+    if (VIR_ALLOC_N(features, MAX_CPU_FLAGS) < 0)
         return -1;
 
-    /* shitf bit map mask to parse for CPU flags */
-    for (int i = 0; i< MAX_CPU_FLAGS; i++){
+    /* shift bit map mask to parse for CPU flags */
+    for (i = 0; i< MAX_CPU_FLAGS; i++) {
         if (hwcaps & BIT_SHIFTS(i)) {
-            cpu_features[cpu_feature_index] = g_strdup(flag_list[i]);
+            features[cpu_feature_index] = g_strdup(flag_list[i]);
             cpu_feature_index++;
             }
         }
 
     if (cpu_feature_index > 1) {
-        cpu_feature_string = virStringListJoin((const char **)cpu_features, " ");
-        if (!cpu_feature_string)
+        cpu_feature_str = virStringListJoin((const char **)features, " ");
+        if (!cpu_feature_str)
             goto cleanup;
     }
-    data->features = g_strdup(cpu_feature_string);
+    data->features = g_strdup(cpu_feature_str);
 
     return 0;
 
  cleanup:
-    virStringListFree(cpu_features);
-    VIR_FREE(cpu_feature_string);
+    virStringListFree(features);
+    VIR_FREE(cpu_feature_str);
     return -1;
 }
 

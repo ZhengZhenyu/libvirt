@@ -21,7 +21,6 @@
 
 #pragma once
 
-
 #define VIR_CPU_ARM_DATA_INIT { 0 }
 
 typedef struct _virCPUarmData virCPUarmData;
