@@ -277,13 +277,13 @@ armModelFind(virCPUarmMapPtr map,
 }
 
 static virCPUarmModelPtr
-armModelFindByModelName(virCPUarmMapPtr map,
-                  char *model_name)
+armModelFindByPVR(virCPUarmMapPtr map,
+                  unsigned long pvr)
 {
     size_t i;
 
     for (i = 0; i < map->nmodels; i++) {
-        if (map->models[i]->name == model_name)
+        if (map->models[i]->data.pvr == pvr)
             return map->models[i];
     }
 
@@ -327,6 +327,20 @@ armModelParse(xmlXPathContextPtr ctxt,
                            vendor, model->name);
             goto error;
         }
+    }
+
+    if (!virXPathBoolean("boolean(./pvr)", ctxt)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Missing PVR information for CPU model %s"),
+                       model->name);
+        goto error;
+    }
+
+    if (virXPathULongHex("string(./pvr/@value)", ctxt, &model->data.pvr) < 0) {
+        virReportError(VIR_ERR_INTERNAL_ERROR,
+                       _("Missing or invalid PVR value in CPU model %s"),
+                       model->name);
+        goto error;
     }
 
     if (VIR_APPEND_ELEMENT(map->models, map->nmodels, model) < 0)
@@ -589,10 +603,10 @@ armDecode(virCPUDefPtr cpu,
     if (!cpuData || !(map = virCPUarmGetMap()))
         return -1;
 
-    if (!(model = armModelFindByModelName(map, cpuData->model_name))) {
+    if (!(model = armModelFindByPVR(map, cpuData->pvr))) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("Cannot find CPU model with name %s"),
-                       cpuData->model_name);
+                       _("Cannot find CPU model with PVR 0x%03lx"),
+                       cpuData->pvr);
         return -1;
     }
 
@@ -606,9 +620,9 @@ armDecode(virCPUDefPtr cpu,
     cpu->model = g_strdup(model->name);
 
     if (cpuData->vendor_id &&
-        !(vendor = armVendorFindByName(map, cpuData->vendor_id))) {
+        !(vendor = armVendorFindByID(map, cpuData->vendor_id))) {
         virReportError(VIR_ERR_OPERATION_FAILED,
-                       _("Cannot find CPU vendor with vendor id %s"),
+                       _("Cannot find CPU vendor with vendor id 0x%02lx"),
                        cpuData->vendor_id);
         return -1;
     }
