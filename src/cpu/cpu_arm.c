@@ -515,7 +515,8 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
  * represented by each bit.
  */
 static int
-armCpuDataFromRegs(virCPUarmData *data) {
+armCpuDataFromRegs(virCPUarmData *data)
+{
     /* Generate human readable flag list according to the order of */
     /* AT_HWCAP bit map */
     const char *flag_list[MAX_CPU_FLAGS] = {
