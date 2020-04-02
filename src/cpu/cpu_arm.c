@@ -1,6 +1,7 @@
 /*
  * cpu_arm.c: CPU driver for arm CPUs
  *
+ * Copyright (C) 2020 Huawei Technologies Co., Ltd.
  * Copyright (C) 2013 Red Hat, Inc.
  * Copyright (C) Canonical Ltd. 2012
  *
@@ -23,17 +24,36 @@
 
 #include "viralloc.h"
 #include "cpu.h"
+#include "cpu_arm.h"
 #include "cpu_map.h"
+#include "virlog.h"
 #include "virstring.h"
 #include "virxml.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
+
+VIR_LOG_INIT("cpu.cpu_arm");
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
     VIR_ARCH_ARMV7B,
     VIR_ARCH_ARMV7L,
     VIR_ARCH_AARCH64,
+};
+
+typedef struct _virCPUarmVendor virCPUarmVendor;
+typedef virCPUarmVendor *virCPUarmVendorPtr;
+struct _virCPUarmVendor {
+    char *name;
+    unsigned long value;
+};
+
+typedef struct _virCPUarmModel virCPUarmModel;
+typedef virCPUarmModel *virCPUarmModelPtr;
+struct _virCPUarmModel {
+    char *name;
+    virCPUarmVendorPtr vendor;
+    virCPUarmData data;
 };
 
 typedef struct _virCPUarmFeature virCPUarmFeature;
@@ -64,6 +84,10 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(virCPUarmFeature, virCPUarmFeatureFree);
 typedef struct _virCPUarmMap virCPUarmMap;
 typedef virCPUarmMap *virCPUarmMapPtr;
 struct _virCPUarmMap {
+    size_t nvendors;
+    virCPUarmVendorPtr *vendors;
+    size_t nmodels;
+    virCPUarmModelPtr *models;
     GPtrArray *features;
 };
 
@@ -82,10 +106,60 @@ virCPUarmMapNew(void)
 }
 
 static void
+virCPUarmDataClear(virCPUarmData *data)
+{
+    if (!data)
+        return;
+
+    VIR_FREE(data->features);
+}
+
+static void
+virCPUarmDataFree(virCPUDataPtr cpuData)
+{
+    if (!cpuData)
+        return;
+
+    virCPUarmDataClear(&cpuData->data.arm);
+    VIR_FREE(cpuData);
+}
+
+static void
+armModelFree(virCPUarmModelPtr model)
+{
+    if (!model)
+        return;
+
+    virCPUarmDataClear(&model->data);
+    g_free(model->name);
+    g_free(model);
+}
+
+static void
+armVendorFree(virCPUarmVendorPtr vendor)
+{
+    if (!vendor)
+        return;
+
+    g_free(vendor->name);
+    g_free(vendor);
+}
+
+static void
 virCPUarmMapFree(virCPUarmMapPtr map)
 {
     if (!map)
         return;
+
+    size_t i;
+
+    for (i = 0; i < map->nmodels; i++)
+        armModelFree(map->models[i]);
+    g_free(map->models);
+
+    for (i = 0; i < map->nvendors; i++)
+        armVendorFree(map->vendors[i]);
+    g_free(map->vendors);
 
     g_ptr_array_free(map->features, TRUE);
 
@@ -259,6 +333,7 @@ struct cpuArchDriver cpuDriverArm = {
     .compare = virCPUarmCompare,
     .decode = NULL,
     .encode = NULL,
+    .dataFree = virCPUarmDataFree,
     .baseline = virCPUarmBaseline,
     .update = virCPUarmUpdate,
     .validateFeatures = virCPUarmValidateFeatures,
