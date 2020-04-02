@@ -1,0 +1,16 @@
+<cpus>
+  <model name='Falkor'>
+    <vendor name='Qualcomm'/>
+    <pvr value='0xc00'/>
+    <feature name="fp"/>
+    <feature name="asimd"/>
+    <feature name="evtstrm"/>
+    <feature name="aes"/>
+    <feature name="pmull"/>
+    <feature name="sha1"/>
+    <feature name="sha2"/>
+    <feature name="crc32"/>
+    <feature name="cpuid"/>
+    <feature name="asimdrdm"/>
+  </model>
+</cpus>
