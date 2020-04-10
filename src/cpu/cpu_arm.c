@@ -1,7 +1,7 @@
 /*
  * cpu_arm.c: CPU driver for arm CPUs
  *
- * Copyright (C) 2020 Huawei Technologies Co., Ltd.
+ * Copyright (C) 2020 Huawei Technologies Co., Ltd .
  * Copyright (C) 2013 Red Hat, Inc.
  * Copyright (C) Canonical Ltd. 2012
  *
@@ -21,8 +21,10 @@
  */
 
 #include <config.h>
-#include <asm/hwcap.h>
-#include <sys/auxv.h>
+#if defined(__arm__) || defined(__aarch64__)
+# include <asm/hwcap.h>
+# include <sys/auxv.h>
+#endif
 
 #include "viralloc.h"
 #include "cpu.h"
@@ -301,6 +303,7 @@ virCPUarmModelFind(virCPUarmMapPtr map,
     return NULL;
 }
 
+#if defined(__arm__) || defined(__aarch64__)
 static virCPUarmModelPtr
 virCPUarmModelFindByPVR(virCPUarmMapPtr map,
                         unsigned long pvr)
@@ -314,6 +317,7 @@ virCPUarmModelFindByPVR(virCPUarmMapPtr map,
 
     return NULL;
 }
+#endif
 
 static int
 virCPUarmModelParse(xmlXPathContextPtr ctxt,
@@ -375,7 +379,7 @@ virCPUarmModelParse(xmlXPathContextPtr ctxt,
 
  error:
     virCPUarmModelFree(model);
-    return -1
+    return -1;
 }
 
 static virCPUarmMapPtr
@@ -387,6 +391,7 @@ virCPUarmLoadMap(void)
 
     if (cpuMapLoad("arm", virCPUarmVendorParse, virCPUarmMapFeatureParse,
                    virCPUarmModelParse, map) < 0)
+        return NULL;
 
     return g_steal_pointer(&map);
 }
@@ -498,6 +503,7 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
     return 0;
 }
 
+#if defined(__arm__) || defined(__aarch64__)
 /**
  * virCPUarmCpuDataFromRegs:
  *
@@ -681,16 +687,21 @@ virCPUarmGetHost(virCPUDefPtr cpu,
     virCPUarmDataFree(cpuData);
     return ret;
 }
+#endif
 
 struct cpuArchDriver cpuDriverArm = {
     .name = "arm",
     .arch = archs,
     .narch = G_N_ELEMENTS(archs),
     .compare = virCPUarmCompare,
+#if defined(__arm__) || defined(__aarch64__)
+    .getHost = virCPUarmGetHost,
     .decode = virCPUarmDecodeCPUData,
+#else
+    .decode = NULL,
+#endif
     .encode = NULL,
     .dataFree = virCPUarmDataFree,
-    .getHost = virCPUarmGetHost,
     .baseline = virCPUarmBaseline,
     .update = virCPUarmUpdate,
     .validateFeatures = virCPUarmValidateFeatures,
