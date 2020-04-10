@@ -21,7 +21,7 @@
  */
 
 #include <config.h>
-#if defined(__arm__) || defined(__aarch64__)
+#if defined(__aarch64__)
 # include <asm/hwcap.h>
 # include <sys/auxv.h>
 #endif
@@ -303,7 +303,7 @@ virCPUarmModelFind(virCPUarmMapPtr map,
     return NULL;
 }
 
-#if defined(__arm__) || defined(__aarch64__)
+#if defined(__aarch64__)
 static virCPUarmModelPtr
 virCPUarmModelFindByPVR(virCPUarmMapPtr map,
                         unsigned long pvr)
@@ -503,7 +503,7 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
     return 0;
 }
 
-#if defined(__arm__) || defined(__aarch64__)
+#if defined(__aarch64__)
 /**
  * virCPUarmCpuDataFromRegs:
  *
@@ -694,7 +694,7 @@ struct cpuArchDriver cpuDriverArm = {
     .arch = archs,
     .narch = G_N_ELEMENTS(archs),
     .compare = virCPUarmCompare,
-#if defined(__arm__) || defined(__aarch64__)
+#if defined(__aarch64__)
     .getHost = virCPUarmGetHost,
     .decode = virCPUarmDecodeCPUData,
 #else
