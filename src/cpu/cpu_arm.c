@@ -21,6 +21,10 @@
  */
 
 #include <config.h>
+#if defined(__aarch64__)
+# include <asm/hwcap.h>
+# include <sys/auxv.h>
+#endif
 
 #include "viralloc.h"
 #include "cpu.h"
@@ -31,6 +35,15 @@
 #include "virxml.h"
 
 #define VIR_FROM_THIS VIR_FROM_CPU
+
+#if defined(__aarch64__)
+/* Shift bit mask for parsing cpu flags */
+# define BIT_SHIFTS(n) (1UL << (n))
+/* The current max number of cpu flags on ARM is 32 */
+# define MAX_CPU_FLAGS 32
+#endif
+
+VIR_LOG_INIT("cpu.cpu_arm");
 
 static const virArch archs[] = {
     VIR_ARCH_ARMV6L,
@@ -491,12 +504,203 @@ virCPUarmValidateFeatures(virCPUDefPtr cpu)
     return 0;
 }
 
+#if defined(__aarch64__)
+/**
+ * virCPUarmCpuDataFromRegs:
+ *
+ * @data: 64-bit arm CPU specific data
+ *
+ * Fetches CPU vendor_id and part_id from MIDR_EL1 register, parse CPU
+ * flags from AT_HWCAP. There are currently 32 valid flags  on ARM arch
+ * represented by each bit.
+ */
+static int
+virCPUarmCpuDataFromRegs(virCPUarmData *data)
+{
+    /* Generate human readable flag list according to the order of */
+    /* AT_HWCAP bit map */
+    const char *flag_list[MAX_CPU_FLAGS] = {
+        "fp", "asimd", "evtstrm", "aes", "pmull", "sha1", "sha2",
+        "crc32", "atomics", "fphp", "asimdhp", "cpuid", "asimdrdm",
+        "jscvt", "fcma", "lrcpc", "dcpop", "sha3", "sm3", "sm4",
+        "asimddp", "sha512", "sve", "asimdfhm", "dit", "uscat",
+        "ilrcpc", "flagm", "ssbs", "sb", "paca", "pacg"};
+    unsigned long cpuid, hwcaps;
+    char **features = NULL;
+    g_autofree char *cpu_feature_str = NULL;
+    int cpu_feature_index = 0;
+    size_t i;
+
+    if (!(getauxval(AT_HWCAP) & HWCAP_CPUID)) {
+        virReportError(VIR_ERR_INTERNAL_ERROR, "%s",
+                       _("CPUID registers unavailable"));
+            return -1;
+    }
+
+    /* read the cpuid data from MIDR_EL1 register */
+    asm("mrs %0, MIDR_EL1" : "=r" (cpuid));
+    VIR_DEBUG("CPUID read from register:  0x%016lx", cpuid);
+
+    /* parse the coresponding part_id bits */
+    data->pvr = cpuid>>4&0xFFF;
+    /* parse the coresponding vendor_id bits */
+    data->vendor_id = cpuid>>24&0xFF;
+
+    hwcaps = getauxval(AT_HWCAP);
+    VIR_DEBUG("CPU flags read from register:  0x%016lx", hwcaps);
+
+    if (VIR_ALLOC_N(features, MAX_CPU_FLAGS) < 0)
+        return -1;
+
+    /* shift bit map mask to parse for CPU flags */
+    for (i = 0; i< MAX_CPU_FLAGS; i++) {
+        if (hwcaps & BIT_SHIFTS(i)) {
+            features[cpu_feature_index] = g_strdup(flag_list[i]);
+            cpu_feature_index++;
+        }
+    }
+
+    if (cpu_feature_index > 1) {
+        cpu_feature_str = virStringListJoin((const char **)features, " ");
+        if (!cpu_feature_str)
+            goto error;
+    }
+    data->features = g_strdup(cpu_feature_str);
+
+    return 0;
+
+ error:
+    virStringListFree(features);
+    return -1;
+}
+
+static int
+virCPUarmDataParseFeatures(virCPUDefPtr cpu,
+                           const virCPUarmData *cpuData)
+{
+    int ret = -1;
+    size_t i;
+    char **features;
+
+    if (!cpu || !cpuData)
+        return ret;
+
+    if (!(features = virStringSplitCount(cpuData->features, " ",
+                                         0, &cpu->nfeatures)))
+        return ret;
+    if (cpu->nfeatures) {
+        if (VIR_ALLOC_N(cpu->features, cpu->nfeatures) < 0)
+            goto error;
+
+        for (i = 0; i < cpu->nfeatures; i++) {
+            cpu->features[i].policy = VIR_CPU_FEATURE_REQUIRE;
+            cpu->features[i].name = g_strdup(features[i]);
+        }
+    }
+
+    ret = 0;
+
+ cleanup:
+    virStringListFree(features);
+    return ret;
+
+ error:
+    for (i = 0; i < cpu->nfeatures; i++)
+        VIR_FREE(cpu->features[i].name);
+    VIR_FREE(cpu->features);
+    cpu->nfeatures = 0;
+    goto cleanup;
+}
+
+static int
+virCPUarmDecode(virCPUDefPtr cpu,
+                const virCPUarmData *cpuData,
+                virDomainCapsCPUModelsPtr models)
+{
+    virCPUarmMapPtr map;
+    virCPUarmModelPtr model;
+    virCPUarmVendorPtr vendor = NULL;
+
+    if (!cpuData || !(map = virCPUarmGetMap()))
+        return -1;
+
+    if (!(model = virCPUarmModelFindByPVR(map, cpuData->pvr))) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("Cannot find CPU model with PVR 0x%03lx"),
+                       cpuData->pvr);
+        return -1;
+    }
+
+    if (!virCPUModelIsAllowed(model->name, models)) {
+        virReportError(VIR_ERR_CONFIG_UNSUPPORTED,
+                       _("CPU model %s is not supported by hypervisor"),
+                       model->name);
+        return -1;
+    }
+
+    cpu->model = g_strdup(model->name);
+
+    if (cpuData->vendor_id &&
+        !(vendor = virCPUarmVendorFindByID(map, cpuData->vendor_id))) {
+        virReportError(VIR_ERR_OPERATION_FAILED,
+                       _("Cannot find CPU vendor with vendor id 0x%02lx"),
+                       cpuData->vendor_id);
+        return -1;
+    }
+
+    if (vendor)
+        cpu->vendor = g_strdup(vendor->name);
+
+    if (cpuData->features &&
+        virCPUarmDataParseFeatures(cpu, cpuData) < 0)
+        return -1;
+
+    return 0;
+}
+
+static int
+virCPUarmDecodeCPUData(virCPUDefPtr cpu,
+                       const virCPUData *data,
+                       virDomainCapsCPUModelsPtr models)
+{
+    return virCPUarmDecode(cpu, &data->data.arm, models);
+}
+
+static int
+virCPUarmGetHost(virCPUDefPtr cpu,
+                 virDomainCapsCPUModelsPtr models)
+{
+    virCPUDataPtr cpuData = NULL;
+    int ret = -1;
+
+    if (virCPUarmDriverInitialize() < 0)
+        goto cleanup;
+
+    if (!(cpuData = virCPUDataNew(archs[0])))
+        goto cleanup;
+
+    if (virCPUarmCpuDataFromRegs(&cpuData->data.arm) < 0)
+        goto cleanup;
+
+    ret = virCPUarmDecodeCPUData(cpu, cpuData, models);
+
+ cleanup:
+    virCPUarmDataFree(cpuData);
+    return ret;
+}
+#endif
+
 struct cpuArchDriver cpuDriverArm = {
     .name = "arm",
     .arch = archs,
     .narch = G_N_ELEMENTS(archs),
     .compare = virCPUarmCompare,
+#if defined(__aarch64__)
+    .getHost = virCPUarmGetHost,
+    .decode = virCPUarmDecodeCPUData,
+#else
     .decode = NULL,
+#endif
     .encode = NULL,
     .dataFree = virCPUarmDataFree,
     .baseline = virCPUarmBaseline,
