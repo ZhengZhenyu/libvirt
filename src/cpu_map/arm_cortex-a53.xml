@@ -1,0 +1,16 @@
+<cpus>
+  <model name='cortex-a53'>
+    <vendor name='ARM'/>
+    <pvr value='0xd03'/>
+    <feature name="fp"/>
+    <feature name="asimd"/>
+    <feature name="evtstrm"/>
+    <feature name="aes"/>
+    <feature name="pmull"/>
+    <feature name="sha1"/>
+    <feature name="sha2"/>
+    <feature name="crc32"/>
+    <feature name="cpuid"/>
+    <feature name="asimdrdm"/>
+  </model>
+</cpus>
